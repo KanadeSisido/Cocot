@@ -1,0 +1,6 @@
+[submodule "lab/cocot-app"]
+	path = lab/cocot-app
+	url = git@github.com:KanadeSisido/cocot-app-mvp.git
+[submodule "lab/cocot-upload"]
+	path = lab/cocot-upload
+	url = git@github.com:KanadeSisido/cocot-upload.git
