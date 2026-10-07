@@ -2,15 +2,15 @@
 
 - 公開者：Kanade Sisido（Cocot）
 - 初版：2026-10-07
-- 版：1
+- 版：2（2026-10-08）
 
 この文書は、Cocotの音声再生UI「音完全集中UI」（以下、集中モード）の仕組みを、公開日の時点で存在した技術として記録し公開するものである。ここに書いた内容と変形例を含む。
 
-設計は継続中であり、決まった内容を版として追記していく。以下の数値は、特に断りのない限り実機での試用に基づく初期値であり、同じ仕組みは別の数値でも成り立つ。
+設計は継続中であり、決まった内容を版として追記していく。版2では、振動による通知（10節）、ほかのアプリの音との重ね再生（11節）、系列推薦の選び方（12節）を加え、OSのメディア表示（2.1節）を詳しくした。以下の数値は、特に断りのない限り実機での試用に基づく初期値であり、同じ仕組みは別の数値でも成り立つ。
 
 ## Abstract (English)
 
-A mobile audio player UI for listening to audio works (e.g., ASMR) without revealing what is being played and without looking at the screen. In "focus mode" the screen shows nothing (black), and the OS media controls show only a generic title. The listener prepares several "rails" in advance, each backed by a content source (e.g., newest works, a tag). One-finger and two-finger gestures on the blank screen switch rails (vertical swipe on one side), adjust in-app volume (vertical drag on the other side), seek, move between works, and toggle playback. Each rail keeps its own current work, each work keeps its own resume position, and a rail continues into sequential recommendations when its source is exhausted. Gesture recognition uses a side split decided at touch-down, a dead zone along the split for vertical gestures, a configurable split position (one-handed mode), a bottom dead zone to avoid conflicts with OS swipe-up gestures, and cancellation of a rail switch by reversing the swipe before release. When the audio output route is the device's built-in speaker, focus mode refuses to start playback or raise the volume (optionally signalling the refusal with a dedicated vibration pattern), while the normal UI warns and performs the action only if it is repeated within a short time.
+A mobile audio player UI for listening to audio works (e.g., ASMR) without revealing what is being played and without looking at the screen. In "focus mode" the screen shows nothing (black), and the OS media controls show only a generic title. The listener prepares several "rails" in advance, each backed by a content source (e.g., newest works, a tag). One-finger and two-finger gestures on the blank screen switch rails (vertical swipe on one side), adjust in-app volume (vertical drag on the other side), seek, move between works, and toggle playback. Each rail keeps its own current work, each work keeps its own resume position, and a rail continues into sequential recommendations when its source is exhausted. Gesture recognition uses a side split decided at touch-down, a dead zone along the split for vertical gestures, a configurable split position (one-handed mode), a bottom dead zone to avoid conflicts with OS swipe-up gestures, and cancellation of a rail switch by reversing the swipe before release. When the audio output route is the device's built-in speaker, focus mode refuses to start playback or raise the volume (optionally signalling the refusal with a dedicated vibration pattern), while the normal UI warns and performs the action only if it is repeated within a short time. Haptic feedback is limited to events whose meaning is unambiguous; the first and second presses of the two-stage "previous" action are distinguished by the number of pulses rather than their strength, and a rail-switch drag gives a detent-like tick each time the outcome on release would change. The same generic OS metadata is used in the normal UI as well, so no work information can linger in OS media surfaces after a mode switch. By default playback is exclusive (other apps' audio stops), and the listener can explicitly turn on a "listen-alongside" mode that mixes with other apps' audio at the cost of headset and lock-screen controls. Sequential recommendation is non-personalized: candidates following the previous work are scored by tag overlap plus a shrunk transition ratio aggregated per session across all listeners, kept separately per origin (source order, recommendation, temporary rail, going back) so that origin weights can be applied at recommendation time.
 
 ## 1. 目的
 
@@ -19,9 +19,17 @@ A mobile audio player UI for listening to audio works (e.g., ASMR) without revea
 ## 2. 表示しないこと
 
 - 集中モードの画面は全面を黒にし、作品名・サムネイル・操作アイコン・音量ゲージ・操作の結果を示す表示を出さない。操作の結果は、音が変わること（作品が変わる、位置が飛ぶ、音量が変わる）で伝える。
-- OSのメディア表示（通知、ロック画面、コントロールセンター等）には、全作品で共通の汎用の題名だけを渡し、作品名とサムネイルを渡さない。OSによって消せないアプリ識別表示は許容する。
+- OSのメディア表示（通知、ロック画面、コントロールセンター等）には、全作品で共通の汎用の題名だけを渡し、作品名とサムネイルを渡さない。OSによって消せないアプリ識別表示は許容する（2.1節）。
 - 集中モード中はステータスバーとナビゲーションバーを隠せる。
 - 長押しをしたときに限り、レールの位置を示す点の列、再生位置のバー、通常の画面へ戻るボタンを暗い色で表示する（7.5節）。作品名は表示しない。
+
+### 2.1 OSのメディア表示
+
+- 集中モードに限らず、作品名やジャケット画像を表示する通常の画面で再生しているときも、OSには同じ汎用のメタデータを渡す。画面の状態に合わせてメタデータを差し替えると、切り替える前の作品情報が通知やBluetooth機器の表示に残る経路ができるため、差し替えない。
+- 渡すのは題名だけとし、出演者、アルバム、画像、レールの名前（タグ名など）は渡さない。タグ名も作品の性質を表すからである。OSに公開される再生キューにも作品情報を入れない。
+- 題名は、OSが空の題名で表示を崩さなければ空にし、崩す場合は固定の文言（例：サービス名）にする。題名は固定値として埋め込まず設定値として持ち、利用者が文言を変えられるようにできる。
+- 再生時間と再生位置は渡し、OSの表示にシークバーを出す。
+- OSの操作ボタン（通知、ロック画面、イヤホン、Bluetooth機器）は、再生／一時停止、前、次の3つだけにし、レール乗換は出さない。OS側の「前」と「次」もアプリ内と同じ規則に従い、「前」は4.1節の2段階動作をする。
 
 ## 3. 再生ソースとレール
 
@@ -141,7 +149,7 @@ A mobile audio player UI for listening to audio works (e.g., ASMR) without revea
 ## 9. その他
 
 - イヤホンが外れたら一時停止する。スピーカーから音が流れるのを防ぐため。
-- 振動や効果音による操作の通知は、使うかどうかを選べる。
+- 振動による操作の通知は、使うかどうかを選べる（10節）。
 
 ### 9.1 本体スピーカーへの出力
 
@@ -163,7 +171,68 @@ A mobile audio player UI for listening to audio works (e.g., ASMR) without revea
 
 出力先は、OSが報告する現在の出力経路（有線イヤホン、Bluetooth機器、本体スピーカーなど）で判定する。
 
-## 10. 変形例
+## 10. 振動による通知
+
+- 操作の結果を知らせる手段は振動だけとし、効果音や音声案内は使わない。効果音は作品の音に割り込み、没入を損なうため。
+- 振動は、何を伝えているかが1つに決まる事象にだけ当て、数を最小限にする。意味の分からない振動を起こさないため。
+- 初期状態はオンとし、設定にオン／オフの切替を1つだけ置く。強さやパターンは選ばせない。設定は集中モードと通常の画面で共通にする。
+- OSの触覚設定に従い、OS側でオフにしていればアプリの設定がオンでも振動しない。
+- 集中モードのジェスチャーと、通常の画面のジェスチャー（8節の操作領域とレールの点の列のドラッグ）で振動する。ボタン操作では振動しない。ボタンは見た目で成立が分かるため。
+
+| 事象 | パターン |
+| --- | --- |
+| 次の作品へ移った | 1回 |
+| 「前」の1回目（現在の作品の先頭へ戻った） | 弱い1回 |
+| 「前」の2回目（前の作品へ移った） | 約100ms間隔の2回 |
+| レール乗換のドラッグ中に、離したときの結果（乗り換わる／乗り換わらない）が変わった | そのたびに短い1回 |
+
+- 「前」の1回目と2回目は、振動の強さではなく回数で区別する。機種によっては強弱の差がほとんど感じられないため。
+- レール乗換の手応えは、ダイヤルのクリック感と同じ考え方で鳴らす。成立する距離に達したとき、一番遠くまで動かした位置から戻して取消になったとき、そこから再び進めて成立に戻ったときに、それぞれ1回鳴る。
+- 次の事象では振動しない。
+  - レール乗換の確定（離したとき）。ドラッグ中の手応えで足り、振動を重ねると何を指すのか分からなくなるため。
+  - 再生／一時停止と音量。音の変化そのものが手がかりになるため。
+  - 何も起きないとき（最小距離に届かずに離した、操作無効領域から始めた、レールの端、「前」の上限、「前」の待機が切れた）。音が変わらないこと自体を合図にする。
+  - 10秒シーク。いちばん多く打つ操作なので、振動が続くと煩わしいため。
+- 振動の消し方と、OSの触覚設定がオフだと振動しないことを、初めて集中モードに入る前に通常の画面で説明する。
+
+## 11. ほかのアプリの音との重ね再生（ながら聴き）
+
+- 既定では、再生を始めるとほかのアプリの音を止める（排他的な再生）。この状態ではOSのメディア操作とイヤホンの操作を受けられる。
+- 聴取者が明示的にオンにしたときだけ、ほかのアプリの音（授業動画など）と重ねて鳴らす。これを**ながら聴き**と呼ぶ。勉強中に動画を見ながら聴くなど、あらかじめ設定する余裕のある場面を想定する。
+  - 端末によっては、オンのあいだはOSのメディア操作の対象にならず、ロック画面やイヤホンからCocotを操作できなくなる。これを許容し、操作はアプリの画面（集中モードを含む）で行う。
+  - オンのあいだも、バックグラウンド再生は続ける。
+  - オンのあいだは、ほかのアプリの音声の割り込み（着信など）をOSの排他制御で受け取れないことがあるので、別の手段で検知する。
+- 切替は全画面の再生画面に置き、再生中に切り替えたらその場で効かせる。値は端末に保存し、アプリを再起動しても保つ。
+
+## 12. 系列推薦
+
+3節でレールの列を延ばす系列推薦の選び方。聴取者個人の嗜好は学習せず、直前に聴いた1作品と全聴取者の集計だけで選ぶ。誰が聴いても、同じ作品の後には同じ候補が出る。
+
+### 12.1 点数
+
+- 直前の作品Aに対する候補Bの点数を `タグの重なり(A, B) + λ × 遷移の割合(A→B)` とする。タグの重なりはJaccard係数、λは例えば1とする。
+- 遷移の割合は `重み付き件数(A→B) / (重み付き件数(A→すべて) + c)` とし、cは例えば10とする。遷移が1件しかないときに割合が100%になり、タグの重なりを圧倒するのを防ぐ。件数で切る閾値を置くと、閾値の前後で並びが段差になるので使わない。
+- 同点なら新しい順に並べ、どちらにも当たらなければ新着順に落とす。再生数の順は使わない。利用者が少ないうちは差がつかず、人気作への偏りを生むため。
+
+### 12.2 除外と候補が尽きたとき
+
+- 削除済みと非公開の作品、同じレールの道のり（4.2節）にある作品、聴き終えた作品を候補から外す。聴き終えた印は端末にだけあるので、サーバーは道のりの作品を除いた上位N件（例：20件）を返し、聴き終えた作品は端末で絞り込む。
+- 候補が尽きてもレールは止めず、次の順に条件を緩めて延ばし続ける。どの段でも12.1節の点数で並べる。
+  1. 道のりにない、聴き終えた作品を戻す。
+  2. 道のりの直近K作品（例：5）を除いた、道のりの作品を戻す。公開作品がK+1本以下なら、直前の1作品だけを除く。
+  3. 公開作品が1本しかなければ、その作品を繰り返す。
+
+### 12.3 遷移の集計
+
+- 再生ごとに、作品、聴いた秒数、終わり方（自然終了・次・前・乗換・停止）、**出どころ**（ソースの並び・系列推薦・一時レール・「前」で戻った）、セッション、レールを記録する。一定時間（例：10秒）未満の再生は記録しない。ログインしていない聴取者の再生も、端末ごとのランダムな識別子で受け付ける。
+- 遷移はセッション単位で数え、レールを乗り換えても、続けて聴いた2作品を1つの遷移とする。乗換で選んだ次の作品は強い手がかりになるため。セッションは、一定時間（例：30分）再生がなければ区切る。
+- 遷移A→Bは、Bに関心があったとみなせるとき（自然に最後まで再生した、または長さの30%か5分のどちらか先に届いた。例）だけ数える。
+- 遷移の件数は、Bの出どころごとに分けて持ち、出どころの重みは推薦するときに掛ける。重みは例えば、ソースの並び1、系列推薦0.5、一時レール1、「前」で戻った0とする。
+  - 系列推薦由来を0.5にするのは、推薦が自分の出した結果を強化するのを和らげるため。0にしないのは、利用者が少ないうちは系列推薦由来の再生が大半を占め、捨てると遷移のデータが溜まらないため。
+  - 分けて持つのは、個々の再生の記録を一定期間（例：1年）で消しても、重みを過去の全期間に遡って変えられるようにするため。
+- 同じ聴取者の同じ遷移は、一定時間（例：24時間）に1回だけ数える。
+
+## 13. 変形例
 
 以下の変形例も、この文書で公開する技術に含む。
 
@@ -180,3 +249,11 @@ A mobile audio player UI for listening to audio works (e.g., ASMR) without revea
 - 推薦として、タグや声優の意味的な近さを使う。
 - 集中モードでも本体スピーカーへの出力を拒まず、通常の画面と同じく、振動で警告して一定時間内にもう一度操作したら実行する。振動をオフにしている場合だけ受け付けない。
 - 本体スピーカーへの出力の警告や拒否を、再生と音量上げのどちらか一方だけに適用する。
+- 操作の結果を、効果音や音声案内（レールの名前の読み上げなど）で知らせる。
+- 「前」の1回目と2回目を、振動の回数ではなく強さで区別する。
+- 10秒シーク、レール乗換の確定、操作が成立しなかったときにも振動する。
+- 通常の画面ではOSに作品名と画像を渡し、集中モードでだけ汎用のメタデータに差し替える。または、どちらにするかを設定で選ばせる。
+- 端末の起動後にOSが出す「前回の続きを再生」の表示に、汎用のメタデータで対応する。
+- ながら聴きを既定でオンにする、常にほかのアプリの音と重ねる、または切替を設定画面や集中モードに置く。
+- 系列推薦の手がかりを、直前の1作品ではなく道のりの直近数作品にする。聴取者ごとの嗜好を学習する推薦（例：個人化した遷移モデル）を使う。
+- 遷移の件数を、レール単位で数える。出どころの重みを、集計するときに掛けて合計だけを持つ。
